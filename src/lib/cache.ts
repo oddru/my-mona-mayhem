@@ -97,6 +97,9 @@ class RedisAdapter implements CacheAdapter<any> {
 		return `${this.prefix}${k}`;
 	}
 
+	/**
+	 * Compatibility: return the stored value only (old behavior)
+	 */
 	async get(key: string) {
 		if (!this.client) await this.init();
 		try {
@@ -109,10 +112,15 @@ class RedisAdapter implements CacheAdapter<any> {
 		}
 	}
 
+	/**
+	 * Store a JSON payload that includes value, updatedAt, and optional ttlSeconds.
+	 */
 	async set(key: string, value: any, ttlSec?: number) {
 		if (!this.client) await this.init();
 		try {
-			const payload = JSON.stringify({ value, updatedAt: Date.now() });
+			const payloadObj: any = { value, updatedAt: Date.now() };
+			if (ttlSec) payloadObj.ttlSeconds = Math.floor(ttlSec);
+			const payload = JSON.stringify(payloadObj);
 			const ex = ttlSec || this.ttlSeconds;
 			if (ex && ex > 0) {
 				await this.client.set(this.key(key), payload, 'EX', Math.floor(ex));
@@ -148,6 +156,45 @@ class RedisAdapter implements CacheAdapter<any> {
 		} catch (e) {
 			console.warn('[cache][redis] keys_count failed', e);
 			return 0;
+		}
+	}
+
+	/**
+	 * Compatibility: return entry object with value, updatedAt, expiresAt
+	 */
+	async getEntry(key: string) {
+		if (!this.client) await this.init();
+		try {
+			const v = await this.client.get(this.key(key));
+			if (!v) return undefined;
+			const parsed = JSON.parse(v);
+			const updatedAt = parsed.updatedAt || Date.now();
+			const ttl = (parsed.ttlSeconds !== undefined) ? parsed.ttlSeconds : this.ttlSeconds;
+			const expiresAt = (ttl && ttl > 0) ? updatedAt + ttl * 1000 : Number.MAX_SAFE_INTEGER;
+			return { value: parsed.value, updatedAt, expiresAt };
+		} catch (e) {
+			console.warn('[cache][redis] getEntry failed', e);
+			return undefined;
+		}
+	}
+
+	/**
+	 * Compatibility: store raw CacheValue-like entry into Redis
+	 */
+	async setRaw(key: string, entry: CacheValue<any>) {
+		if (!this.client) await this.init();
+		try {
+			const ttlSeconds = (entry.expiresAt && entry.updatedAt) ? Math.max(0, Math.floor((entry.expiresAt - entry.updatedAt) / 1000)) : this.ttlSeconds;
+			const payloadObj = { value: entry.value, updatedAt: entry.updatedAt } as any;
+			if (ttlSeconds) payloadObj.ttlSeconds = ttlSeconds;
+			const payload = JSON.stringify(payloadObj);
+			if (ttlSeconds && ttlSeconds > 0) {
+				await this.client.set(this.key(key), payload, 'EX', Math.floor(ttlSeconds));
+			} else {
+				await this.client.set(this.key(key), payload);
+			}
+		} catch (e) {
+			console.warn('[cache][redis] setRaw failed', e);
 		}
 	}
 }

@@ -1,13 +1,20 @@
 @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
 
 :root{
-  --bg:#fff;
-  --muted:#666;
-  --panel-border:#e6e6e6;
-  --accent:#30a14e;
-  --vs-bg:#111;
-  --vs-fg:#fff;
-  --day-size:12px;
+ /* Breakpoints (use in responsive media queries)
+    --bp-lg: large breakpoint for collapsing two-column layouts
+    --bp-sm: small breakpoint for stacking inputs and full-width buttons
+ */
+ --bp-lg: 1024px; /* collapse comparison into a single column at this width */
+ --bp-sm: 480px;  /* small screens: stack inputs vertically and make buttons full-width */
+
+ --bg:#fff;
+ --muted:#666;
+ --panel-border:#e6e6e6;
+ --accent:#30a14e;
+ --vs-bg:#111;
+ --vs-fg:#fff;
+ --day-size:12px;
 }
 
 body{background:var(--bg);color:#111;margin:0;padding:0;font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, 'Press Start 2P', monospace}
@@ -19,24 +26,56 @@ header h1{font-family:'Press Start 2P',monospace;font-size:20px;margin:0}
 .form-area{display:flex;gap:12px;align-items:center;justify-content:center;margin-bottom:20px}
 .form-area label{display:flex;flex-direction:column;font-size:12px}
 input[type="text"]{padding:8px 10px;min-width:220px;border:1px solid #ddd;border-radius:6px}
+
+/* Visible focus for keyboard users */
+input[type="text"]:focus-visible, button#battle-btn:focus-visible, .cell:focus-visible, .small-grid:focus-visible, .player-panel:focus-visible {
+  outline: 3px solid #39ff14; /* neon green with high contrast */
+  outline-offset: 3px;
+}
+
 button#battle-btn{padding:10px 16px;font-weight:700;cursor:pointer;border-radius:6px;border:2px solid var(--accent);background:var(--accent);color:#fff}
 button#battle-btn[disabled]{opacity:0.6;cursor:default}
+
+/* Respect user reduced motion preference */
+@media (prefers-reduced-motion: reduce){
+  * { animation: none !important; transition: none !important }
+}
 
 .results{display:flex;align-items:flex-start;gap:18px;justify-content:center}
 .player-panel{width:360px;min-height:150px;border:1px solid var(--panel-border);padding:12px;border-radius:6px;background:#fafafa}
 .meta{font-size:13px;margin-bottom:8px}
 .error{color:#b00}
 
-.grid{display:flex;gap:6px;align-items:flex-start;overflow:auto;padding-bottom:6px}
+.grid{display:flex;gap:6px;align-items:flex-start;overflow:auto;padding-bottom:6px;flex-wrap:wrap}
 .week{display:flex;flex-direction:column;gap:6px}
-.day{width:var(--day-size);height:var(--day-size);border-radius:3px}
+/* Keep day cells perfectly square while allowing responsive scaling/wrapping.
+   Uses aspect-ratio so cells stay square and can shrink/grow with --day-size. */
+.day{width:var(--day-size);aspect-ratio:1/1;border-radius:3px}
 
 /* VS badge */
 .vs{align-self:center;font-weight:900;padding:8px 14px;border-radius:8px;background:var(--vs-bg);color:var(--vs-fg);display:flex;flex-direction:column;align-items:center;gap:6px}
 .vs .winner{background:#fff;color:var(--vs-bg);padding:6px 8px;border-radius:6px;font-weight:700}
 
-@media (max-width:900px){
+@media (max-width:1024px){
+  /* Collapse into a single column stack: Player 1, VS badge, Player 2 */
   .results{flex-direction:column;align-items:center}
+  .results > .player-panel:first-child{order:1}
+  .results > .vs{order:2;margin:12px 0;align-self:center}
+  .results > .player-panel:last-child{order:3}
   .player-panel{width:92%}
   .form-area{flex-direction:column}
+}
+
+/* Small screens: stack inputs and make buttons full width; reduce day cell size */
+@media (max-width:480px){
+  :root{ --day-size:10px }
+  .form-area{flex-direction:column;align-items:stretch}
+  .form-area label{width:100%}
+  input[type="text"]{min-width:unset;width:100%}
+  button#battle-btn{width:100%;box-sizing:border-box}
+
+  /* Contribution grid: allow wrapping and horizontal scroll if needed while keeping square cells */
+  .grid{flex-wrap:wrap;overflow:auto}
+  .week{flex-direction:row}
+  .day{width:var(--day-size);aspect-ratio:1/1}
 }

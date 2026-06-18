@@ -61,6 +61,7 @@ The workshop supports two tracks — follow the one that matches your preferred 
 - **Runtime**: Node.js with [@astrojs/node](https://docs.astro.build/en/guides/integrations-guide/node/) adapter
 - **Font**: Press Start 2P (retro gaming font)
 - **API**: GitHub's contribution graph API
+- Contributions proxy docs: [docs/PROXY.md](docs/PROXY.md)
 
 ## License
 

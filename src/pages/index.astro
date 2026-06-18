@@ -21,11 +21,11 @@
       <section class="form-area">
         <label>
           Player 1
-          <input id="player1" type="text" maxlength="39" autocomplete="off" />
+          <input id="player1" type="text" maxlength="39" autocomplete="off" aria-required="true" aria-invalid="false" />
         </label>
         <label>
           Player 2
-          <input id="player2" type="text" maxlength="39" autocomplete="off" />
+          <input id="player2" type="text" maxlength="39" autocomplete="off" aria-required="true" aria-invalid="false" />
         </label>
         <button id="battle-btn" aria-live="polite"><span class="label">Battle!</span><span class="loading" aria-hidden="true">Battling…</span></button>
       </section>
@@ -122,6 +122,9 @@
                     container.appendChild(range);
 
                     const grid = document.createElement('div'); grid.className = 'grid';
+                    grid.tabIndex = 0;
+                    grid.setAttribute('role', 'list');
+                    grid.setAttribute('aria-label', `${username} contribution calendar`);
                     for (const wk of parsed.weeks) {
                       const col = document.createElement('div'); col.className = 'week';
                       for (let di = 0; di < 7; di++) {
@@ -129,6 +132,9 @@
                         const c = document.createElement('div'); c.className = 'day';
                         c.title = day.date || '';
                         c.style.background = day.color || '#ebedf0';
+                        c.setAttribute('role', 'listitem');
+                        c.setAttribute('tabindex', '0');
+                        c.setAttribute('aria-label', `${day.count || 0} contributions on ${day.date || 'unknown date'}`);
                         col.appendChild(c);
                       }
                       grid.appendChild(col);

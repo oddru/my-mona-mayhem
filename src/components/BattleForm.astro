@@ -10,18 +10,18 @@
   <form id="battle-form" class="battle-form" on:submit preventDefault>
     <div class="field">
       <label for="player1">Player 1</label>
-      <input id="player1" name="player1" type="text" maxlength="39" autocomplete="off" />
+      <input id="player1" name="player1" type="text" maxlength="39" autocomplete="off" aria-required="true" aria-invalid="false" />
     </div>
     <div class="field">
       <label for="player2">Player 2</label>
-      <input id="player2" name="player2" type="text" maxlength="39" autocomplete="off" />
+      <input id="player2" name="player2" type="text" maxlength="39" autocomplete="off" aria-required="true" aria-invalid="false" />
     </div>
     <div class="actions">
       <button id="battle-btn" type="submit">Battle!</button>
     </div>
   </form>
 
-  <div id="results" class="results" aria-live="polite"></div>
+  <div id="results" class="results" aria-live="polite" role="region" aria-atomic="true" aria-label="Battle results"></div>
 
   <style>
     .battle { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Press Start 2P', monospace; max-width:720px; margin:24px auto; padding:12px; }
@@ -49,6 +49,17 @@
     const p2 = document.getElementById('player2');
     const results = document.getElementById('results');
 
+    // Ensure Enter key triggers battle from inputs for keyboard users
+    [p1, p2].forEach(inp => {
+      inp.setAttribute('aria-invalid', 'false');
+      inp.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          if (typeof form.requestSubmit === 'function') form.requestSubmit(); else btn.click();
+        }
+      });
+    });
+
     function setLoading(on) {
       btn.disabled = on;
       btn.textContent = on ? 'Battling…' : 'Battle!';
@@ -69,15 +80,29 @@
         if (details && details.length) {
           const grid = document.createElement('div');
           grid.className = 'small-grid';
-          for (const v of details.slice(-7)) {
+          grid.tabIndex = 0;
+          grid.setAttribute('role', 'list');
+          grid.setAttribute('aria-label', `${username} recent contributions`);
+          const recent = details.slice(-7);
+          recent.forEach((v, i) => {
             const c = document.createElement('div');
             c.className = 'cell';
+            c.setAttribute('role', 'listitem');
+            c.setAttribute('tabindex', '0');
             // shade by value
             const vN = Number(v) || 0;
             const alpha = Math.min(1, vN / 20 + 0.05);
             c.style.background = `rgba(20,100,200,${alpha})`;
+            c.setAttribute('aria-label', `${vN} contributions, day ${i + 1} from end`);
             grid.appendChild(c);
-          }
+          });
+          // keyboard navigation within grid
+          grid.addEventListener('keydown', (e) => {
+            const focusables = Array.from(grid.querySelectorAll('.cell'));
+            const idx = focusables.indexOf(document.activeElement);
+            if (e.key === 'ArrowRight') { e.preventDefault(); const next = focusables[Math.min(idx + 1, focusables.length - 1)]; next && next.focus(); }
+            if (e.key === 'ArrowLeft') { e.preventDefault(); const prev = focusables[Math.max(idx - 1, 0)]; prev && prev.focus(); }
+          });
           el.appendChild(grid);
         }
       } else {
@@ -143,31 +168,40 @@
 
     form.addEventListener('submit', async (ev) => {
       clearResults();
+      // clear previous validation state
+      p1.removeAttribute('aria-invalid'); p2.removeAttribute('aria-invalid');
       const u1 = p1.value.trim();
       const u2 = p2.value.trim();
       if (!USERNAME_RE.test(u1) || !USERNAME_RE.test(u2)) {
+        if (!USERNAME_RE.test(u1)) p1.setAttribute('aria-invalid', 'true');
+        if (!USERNAME_RE.test(u2)) p2.setAttribute('aria-invalid', 'true');
         results.textContent = 'Please enter two valid GitHub usernames.';
+        results.setAttribute('role', 'status');
         return;
       }
       setLoading(true);
-      const [r1, r2] = await Promise.all([fetchPlayer(u1), fetchPlayer(u2)]);
-      clearResults();
-      const left = renderPlayer(u1, r1.ok ? 'ok' : r1.status, r1.total || 0, r1.details || []);
-      const right = renderPlayer(u2, r2.ok ? 'ok' : r2.status, r2.total || 0, r2.details || []);
-      results.appendChild(left);
-      results.appendChild(right);
+      results.textContent = 'Loading…';
+      try {
+        const [r1, r2] = await Promise.all([fetchPlayer(u1), fetchPlayer(u2)]);
+        clearResults();
+        const left = renderPlayer(u1, r1.ok ? 'ok' : r1.status, r1.total || 0, r1.details || []);
+        const right = renderPlayer(u2, r2.ok ? 'ok' : r2.status, r2.total || 0, r2.details || []);
+        results.appendChild(left);
+        results.appendChild(right);
 
-      if (r1.ok && r2.ok) {
-        let message = '';
-        if (r1.total > r2.total) message = `${u1} wins!`;
-        else if (r2.total > r1.total) message = `${u2} wins!`;
-        else message = "It's a tie!";
-        const m = document.createElement('div');
-        m.className = 'winner';
-        m.textContent = message;
-        results.appendChild(m);
+        if (r1.ok && r2.ok) {
+          let message = '';
+          if (r1.total > r2.total) message = `${u1} wins!`;
+          else if (r2.total > r1.total) message = `${u2} wins!`;
+          else message = "It's a tie!";
+          const m = document.createElement('div');
+          m.className = 'winner';
+          m.textContent = message;
+          results.appendChild(m);
+        }
+      } finally {
+        setLoading(false);
       }
-      setLoading(false);
     });
   </script>
 </section>

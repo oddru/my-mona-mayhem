@@ -49,3 +49,5 @@ No CLAUDE.md, AGENTS.md, AIDER_CONVENTIONS.md, .windsurfrules, .cursorrules, or 
 - UI rules: new UI components should preserve the neon aesthetic — neon glows, subtle CRT scanlines, and soft color-shifting accents. Keep high contrast and accessible focus states.
 
 If you want this file adjusted (more detail about the API, recommended test/lint tooling, or automatic CI test steps), say which area to expand.
+
+Note: A short design guide is already included above. Keep additions concise to avoid duplicating the design guidance. This repository also includes docs/PROXY.md which documents the contributions proxy behavior and environment variables.

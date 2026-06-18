@@ -5,7 +5,14 @@
    - Uses CSS variables for timing to follow UI/UX animation principles
 */
 
-:root{
+ :root{
+  /* Breakpoints (documented variables for responsive behaviors)
+     --bp-lg: 1024px -> collapse two-column comparison into a single column
+     --bp-sm: 480px  -> stack inputs vertically; buttons full-width; smaller day cells
+  */
+  --bp-lg: 1024px;
+  --bp-sm: 480px;
+
   --bg-dark:#0a0a1a;
   --neon-green:#5fed83;
   --neon-purple:#8a2be2;
@@ -133,9 +140,21 @@ input[type="text"]::placeholder, textarea::placeholder {
   color: rgba(230,247,234,0.45);
 }
 input[type="text"]:focus, textarea:focus {
-  outline: none;
+  /* Keep visual affordance but avoid removing outline entirely */
   box-shadow: 0 0 12px rgba(95,237,131,0.14), 0 0 24px rgba(138,43,226,0.06);
   border-color: rgba(95,237,131,0.25);
+}
+
+/* Strong, high-contrast focus for keyboard users */
+input[type="text"]:focus-visible, textarea:focus-visible, button:focus-visible, .cell:focus-visible, .small-grid:focus-visible, .player-panel:focus-visible {
+  outline: 3px solid var(--neon-green);
+  outline-offset: 3px;
+}
+
+/* Make interactive day cells keyboard-focusable with clear focus state */
+.cell:focus {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 20px rgba(0,0,0,0.6), 0 0 12px rgba(95,237,131,0.12);
 }
 
 /* Player panels should be dark to match background */
@@ -149,6 +168,23 @@ input[type="text"]:focus, textarea:focus {
 
 /* Day squares - ensure visible on dark background even if level is light */
 .day { border: 1px solid rgba(0,0,0,0.18) }
+
+/* Contribution grid responsiveness: allow wrapping/scroll while keeping square cells */
+.grid{display:flex;gap:6px;align-items:flex-start;overflow:auto;padding-bottom:6px;flex-wrap:wrap}
+.week{display:flex;flex-direction:column;gap:6px}
+.day{width:var(--day-size);aspect-ratio:1/1;border-radius:3px}
+
+/* Small screen adjustments */
+@media (max-width:480px){
+  :root{ --day-size:10px }
+  .form-area{flex-direction:column;align-items:stretch}
+  .form-area label{width:100%}
+  input[type="text"]{min-width:unset;width:100%}
+  button#battle-btn{width:100%;box-sizing:border-box}
+  .grid{flex-wrap:wrap;overflow:auto}
+  .week{flex-direction:row}
+  .day{width:var(--day-size);aspect-ratio:1/1}
+}
 
 /* Subtle pixel noise overlay for authenticity */
 .main-container::before {
@@ -165,6 +201,16 @@ input[type="text"]:focus, textarea:focus {
 
 /* Neon outline on hover for panels */
 .player-panel:hover{ box-shadow: 0 10px 30px rgba(0,0,0,0.6), 0 0 18px rgba(95,237,131,0.08); border-color: rgba(95,237,131,0.16); transform: translateY(-2px); transition: transform var(--t-fast) var(--ease-soft), box-shadow var(--t-med) var(--ease-soft) }
+
+/* Collapse comparison into single column on medium screens to match layout behavior */
+@media (max-width:1024px){
+  .results{flex-direction:column;align-items:center}
+  .results > .player-panel:first-child{order:1}
+  .results > .vs{order:2;margin:12px 0;align-self:center}
+  .results > .player-panel:last-child{order:3}
+  .player-panel{width:92%}
+  .form-area{flex-direction:column}
+}
 
 /* Winner flash on VS badge */
 .vs.win-flash .badge{ animation: vs-shift 2s linear infinite, vs-pulse 0.9s ease-in-out 3; }
