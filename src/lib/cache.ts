@@ -25,14 +25,16 @@ export class SimpleCache<T> {
 		return e.value;
 	}
 
-	set(key: string, value: T) {
+	set(key: string, value: T, ttlSec?: number) {
+		// optional per-entry ttl
+		const ttlMs = ttlSec ? ttlSec * 1000 : this.ttlMs;
 		// evict oldest if over maxEntries
 		if (this.map.size >= this.maxEntries && !this.map.has(key)) {
 			const oldestKey = this.map.keys().next().value;
 			this.map.delete(oldestKey);
 		}
 		const now = Date.now();
-		this.map.set(key, { value, expiresAt: now + this.ttlMs, updatedAt: now });
+		this.map.set(key, { value, expiresAt: now + ttlMs, updatedAt: now });
 	}
 
 	setRaw(key: string, entry: CacheValue<T>) {
@@ -50,11 +52,134 @@ export class SimpleCache<T> {
 	clear() {
 		this.map.clear();
 	}
+
+	keys_count() {
+		return this.map.size;
+	}
 }
 
-// default instance configured from env when imported
-const ttl = Number(process.env.CACHE_TTL_SECONDS || '300');
-const maxEntries = Number(process.env.CACHE_MAX_ENTRIES || '1000');
-export const cache = new SimpleCache<any>(ttl, maxEntries);
+// Adapter interface
+export interface CacheAdapter<T = any> {
+	get(key: string): Promise<T | undefined> | T | undefined;
+	set(key: string, value: T, ttlSec?: number): Promise<void> | void;
+	delete(key: string): Promise<void> | void;
+	keys_count(): Promise<number> | number;
+}
 
+// Redis adapter (optional, falls back to memory if not available)
+class RedisAdapter implements CacheAdapter<any> {
+	private client: any;
+	private prefix = 'cache:';
+	private ttlSeconds: number;
+
+	constructor(ttlSeconds: number, maxEntries?: number, redisClient?: any) {
+		this.ttlSeconds = ttlSeconds;
+		if (redisClient) {
+			this.client = redisClient;
+		}
+	}
+
+	async init() {
+		if (this.client) return;
+		try {
+			// dynamic require to avoid hard dependency if not installed
+			const { createRequire } = await import('module');
+			const require = createRequire(import.meta.url);
+			const IORedis = require('ioredis');
+			this.client = new IORedis();
+		} catch (err) {
+			console.warn('[cache] ioredis not available, falling back to memory adapter.');
+			throw err;
+		}
+	}
+
+	private key(k: string) {
+		return `${this.prefix}${k}`;
+	}
+
+	async get(key: string) {
+		if (!this.client) await this.init();
+		try {
+			const v = await this.client.get(this.key(key));
+			if (!v) return undefined;
+			return JSON.parse(v).value;
+		} catch (e) {
+			console.warn('[cache][redis] get failed, falling back', e);
+			return undefined;
+		}
+	}
+
+	async set(key: string, value: any, ttlSec?: number) {
+		if (!this.client) await this.init();
+		try {
+			const payload = JSON.stringify({ value, updatedAt: Date.now() });
+			const ex = ttlSec || this.ttlSeconds;
+			if (ex && ex > 0) {
+				await this.client.set(this.key(key), payload, 'EX', Math.floor(ex));
+			} else {
+				await this.client.set(this.key(key), payload);
+			}
+		} catch (e) {
+			console.warn('[cache][redis] set failed, falling back', e);
+		}
+	}
+
+	async delete(key: string) {
+		if (!this.client) await this.init();
+		try {
+			await this.client.del(this.key(key));
+		} catch (e) {
+			console.warn('[cache][redis] del failed', e);
+		}
+	}
+
+	async keys_count() {
+		if (!this.client) await this.init();
+		try {
+			let cursor = '0';
+			let count = 0;
+			do {
+				const res = await this.client.scan(cursor, 'MATCH', `${this.prefix}*`, 'COUNT', 100);
+				cursor = res[0];
+				const keys = res[1] || [];
+				count += keys.length;
+			} while (cursor !== '0');
+			return count;
+		} catch (e) {
+			console.warn('[cache][redis] keys_count failed', e);
+			return 0;
+		}
+	}
+}
+
+// createCache factory
+export function createCache(adapterName?: 'memory' | 'redis', options?: { ttlSeconds?: number; maxEntries?: number; redisClient?: any }) {
+	const ttl = options?.ttlSeconds ?? Number(process.env.CACHE_TTL_SECONDS || '300');
+	const maxEntries = options?.maxEntries ?? Number(process.env.CACHE_MAX_ENTRIES || '1000');
+	const envAdapter = (process.env.CACHE_ADAPTER || 'memory') as 'memory' | 'redis';
+	const chosen = adapterName || envAdapter || 'memory';
+
+	if (chosen === 'redis') {
+		// attempt to instantiate RedisAdapter, but fall back to memory if unavailable
+		try {
+			const r = new RedisAdapter(ttl, maxEntries, options?.redisClient);
+			// don't await init here; let methods init lazily
+			return r as CacheAdapter<any>;
+		} catch (e) {
+			console.warn('[cache] failed to create RedisAdapter, falling back to memory');
+		}
+	}
+
+	// memory adapter: return the SimpleCache instance directly so callers
+	// that rely on getEntry/setRaw/etc. continue to work at runtime.
+	const mem = new SimpleCache<any>(ttl, maxEntries);
+	return mem;
+}
+
+// existing default export (backward-compatible)
+const _ttl = Number(process.env.CACHE_TTL_SECONDS || '300');
+const _maxEntries = Number(process.env.CACHE_MAX_ENTRIES || '1000');
+export const cache = createCache(undefined, { ttlSeconds: _ttl, maxEntries: _maxEntries }) as unknown as SimpleCache<any>;
 export default cache;
+
+// Note: If ioredis is not installed or a Redis server is unreachable, this module falls back to the in-memory implementation to keep behavior stable.

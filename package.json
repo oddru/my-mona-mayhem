@@ -6,10 +6,18 @@
     "dev": "astro dev",
     "build": "astro build",
     "preview": "astro preview",
-    "astro": "astro"
+    "astro": "astro",
+    "test": "set \"TS_NODE_TRANSPILE_ONLY=true\" && node --loader ts-node/esm --test tests/proxy.test.js"
   },
   "dependencies": {
     "@astrojs/node": "^9.4.6",
-    "astro": "^5.14.4"
+    "astro": "^5.14.4",
+    "ioredis": "^5.3.2"
+  },
+  "devDependencies": {
+    "esbuild": "^0.18.17",
+    "esbuild-register": "^3.5.2",
+    "ts-node": "^10.9.1",
+    "typescript": "^5.1.6"
   }
 }
