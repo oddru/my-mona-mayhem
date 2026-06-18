@@ -18,7 +18,7 @@
         <p class="subtitle">GitHub Contribution Battle Arena — enter two usernames and battle!</p>
       </header>
 
-      <section class="form-area">
+      <section id="battle-form" class="form-area">
         <label>
           Player 1
           <input id="player1" type="text" maxlength="39" autocomplete="off" aria-required="true" aria-invalid="false" />
@@ -27,13 +27,13 @@
           Player 2
           <input id="player2" type="text" maxlength="39" autocomplete="off" aria-required="true" aria-invalid="false" />
         </label>
-        <button id="battle-btn" aria-live="polite"><span class="label">Battle!</span><span class="loading" aria-hidden="true">Battling…</span></button>
+        <button id="battle-btn"><span class="label">Battle!</span><span class="loading" aria-hidden="true">Battling…</span></button>
       </section>
 
-      <section id="battle-results" class="results" aria-live="polite">
-        <div id="left" class="player-panel" tabindex="0"></div>
+      <section id="results" class="results" aria-live="polite">
+        <div id="left" class="player player-panel" tabindex="0"></div>
         <div id="vs" class="vs"><div class="badge">VS</div></div>
-        <div id="right" class="player-panel" tabindex="0"></div>
+        <div id="right" class="player player-panel" tabindex="0"></div>
       </section>
       <div class="footer-arcade">Mona Mayhem — Retro edition</div>
       <div class="noise-layer" aria-hidden="true"></div>
@@ -121,7 +121,7 @@
                     const range = document.createElement('div'); range.className = 'meta'; range.textContent = `Range: ${start} — ${end}`;
                     container.appendChild(range);
 
-                    const grid = document.createElement('div'); grid.className = 'grid';
+                    const grid = document.createElement('div'); grid.className = 'grid small-grid';
                     grid.tabIndex = 0;
                     grid.setAttribute('role', 'list');
                     grid.setAttribute('aria-label', `${username} contribution calendar`);
@@ -165,8 +165,16 @@
                   const u1 = p1.value.trim(); const u2 = p2.value.trim();
                   left.innerHTML = ''; right.innerHTML = '';
                   setBadgeText('VS');
-                  if (!u1 || !u2) { if (!u1) showInlineError(left, '', 'Player 1 is required'); if (!u2) showInlineError(right, '', 'Player 2 is required'); return; }
-                  if (!USERNAME_RE.test(u1) || !USERNAME_RE.test(u2)) { if (!USERNAME_RE.test(u1)) showInlineError(left, u1 || '', 'Invalid username format'); if (!USERNAME_RE.test(u2)) showInlineError(right, u2 || '', 'Invalid username format'); return; }
+                  if (!u1 || !u2) {
+                    const resEl = document.getElementById('results');
+                    resEl.innerHTML = '<div class="error">Please enter two valid GitHub usernames.</div>';
+                    return;
+                  }
+                  if (!USERNAME_RE.test(u1) || !USERNAME_RE.test(u2)) {
+                    const resEl = document.getElementById('results');
+                    resEl.innerHTML = '<div class="error">Please enter two valid GitHub usernames.</div>';
+                    return;
+                  }
                   setLoading(true);
                   renderPanel(left, u1, null); renderPanel(right, u2, null);
                   const [r1, r2] = await Promise.all([fetchContrib(u1), fetchContrib(u2)]);
