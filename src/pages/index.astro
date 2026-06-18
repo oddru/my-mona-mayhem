@@ -47,176 +47,302 @@
                 const left = document.getElementById('left');
                 const right = document.getElementById('right');
 
-                function setLoading(loading) {
-                  btn.disabled = loading;
-                                  btn.classList.toggle('is-loading', loading);
-                  p1.disabled = loading;
-                  p2.disabled = loading;
-                                  // shimmer panels while loading
-                                  left.classList.toggle('shimmer', loading);
-                                  right.classList.toggle('shimmer', loading);
-                                }
-
-                                function setBadgeText(text) {
-                                  const vsEl = document.getElementById('vs');
-                                  const badge = vsEl.querySelector('.badge');
-                                  if (badge) badge.textContent = text;
-                                  // remove any appended non-badge children (previous winner nodes)
-                                  Array.from(vsEl.children).forEach(c => { if (!c.classList || !c.classList.contains('badge')) vsEl.removeChild(c); });
-                                }
-
-                function colorFromPalette(palette, level, count) {
-                  if (Array.isArray(palette) && typeof level === 'number') {
-                    return palette[Math.min(Math.max(0, level), palette.length - 1)];
-                  }
-                  if (!count || count <= 0) return '#ebedf0';
-                  if (count <= 1) return '#9be9a8';
-                  if (count <= 3) return '#40c463';
-                  if (count <= 7) return '#30a14e';
-                  return '#216e39';
-                }
-
-                function parseUpstreamWeeks(data) {
-                  const weeks = [];
-                  const palette = data && data.colors_full;
-                  if (data && Array.isArray(data.weeks)) {
-                    for (const w of data.weeks) {
-                      const first = new Date(w.first_day);
-                      const col = [];
-                      for (const cd of w.contribution_days) {
-                        const d = new Date(first);
-                        d.setDate(first.getDate() + (cd.weekday || 0));
-                        const dateStr = d.toISOString().slice(0, 10);
-                        const color = colorFromPalette(palette, cd.level, cd.count || 0);
-                        col.push({ date: dateStr, count: cd.count || 0, color });
+                      // seeded RNG for tests (optional)
+                      function makeRng(seed){
+                        let s = seed >>> 0;
+                        return function(){ s = (s * 1664525 + 1013904223) >>> 0; return s / 4294967296; };
                       }
-                      weeks.push(col);
+                      const rng = (window.__POWERUP_SEED__ !== undefined) ? makeRng(Number(window.__POWERUP_SEED__)) : Math.random;
+
+                      // Power-up specs
+                      const POWERUPS = [
+                        { id: 'mult-1', type: 'multiplier', displayName: 'x2', description: 'Double points for short time', rarity: 'rare', durationMs: 5000, value: 2 },
+                        { id: 'steal-1', type: 'steal', displayName: 'Steal', description: 'Steal 10% of opponent', rarity: 'uncommon', durationMs: 5000, value: 0.10 },
+                      ];
+
+                      // PowerUpManager handles spawn/collection/expiry and UI-only effects
+                      const PowerUpManager = (function(){
+                        const active = new Map(); // id -> activePowerUp
+                        const container = document.createElement('div'); container.id = 'powerups';
+                        const live = document.createElement('div'); live.id = 'pu-live'; live.className = 'hidden'; live.setAttribute('aria-live','polite'); live.setAttribute('aria-atomic','true');
+                        const resultsSection = document.getElementById('results');
+                        resultsSection && resultsSection.parentNode && resultsSection.parentNode.insertBefore(container, resultsSection.nextSibling);
+                        document.body.appendChild(live);
+
+                        let spawnInterval = null; let spawnAttempts = 0; const maxSpawns = 3;
+
+                        function announce(text){ live.textContent = text; }
+
+                        function spawnAttempt(){
+                          if (active.size >= maxSpawns) return;
+                          spawnAttempts++;
+                          const baseChance = 0.14; // chance per attempt
+                          if (rng() > baseChance) return; // no spawn
+                          // pick rarity-weighted power-up
+                          const spec = POWERUPS[Math.floor(rng() * POWERUPS.length)];
+                          const id = spec.id + '-' + Date.now() + '-' + Math.floor(rng()*1000);
+                          const ap = { ...spec, id, spawnedAt: Date.now(), expiresAt: Date.now() + (spec.durationMs || 5000), collectedBy: null };
+                          active.set(id, ap);
+                          renderPowerUp(ap);
+                          announce(`${ap.displayName} power-up spawned`);
+                          // auto-expire visible sprite after 10s if uncollected
+                          setTimeout(()=>{ if (active.has(id)){ removePowerUp(id); } }, 10000);
+                        }
+
+                        function renderPowerUp(ap){
+                          const el = document.createElement('button'); el.className = `powerup ${ap.rarity}`; el.setAttribute('data-id', ap.id); el.setAttribute('aria-label', `${ap.displayName} — ${ap.description} — press Enter to collect`);
+                          el.innerHTML = `<span class="rarity">${ap.rarity[0].toUpperCase()}</span><span class="label">${ap.displayName}</span>`;
+                          el.tabIndex = 0;
+                          el.addEventListener('click', ()=>collect(ap.id));
+                          el.addEventListener('keydown', (e)=>{ if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); collect(ap.id); } });
+                          container.appendChild(el);
+                        }
+
+                        function removePowerUp(id){
+                          active.delete(id);
+                          const el = container.querySelector(`[data-id='${id}']`);
+                          if (el) el.remove();
+                        }
+
+                        function collect(id, player){
+                          const ap = active.get(id); if (!ap) return;
+                          ap.collectedBy = player || (Math.random() < 0.5 ? 'player1' : 'player2');
+                          // apply effect to UI
+                          applyEffect(ap, ap.collectedBy);
+                          announce(`${ap.displayName} collected by ${ap.collectedBy}`);
+                          // play a small tone if user interacted earlier (gesture)
+                          try{ playTone(880,120,'triangle',0.04); }catch(e){}
+                          removePowerUp(id);
+                        }
+
+                        function applyEffect(ap, player){
+                          // Find the target container (left/right)
+                          const target = (player === 'player1') ? left : right;
+                          const other = (player === 'player1') ? right : left;
+                          if (!target) return;
+                          // locate totals node
+                          const totals = target.querySelector('.total');
+                          const otherTotals = other && other.querySelector ? other.querySelector('.total') : null;
+                          const original = totals ? Number(totals.dataset.original || totals.dataset.value || totals.textContent.replace(/[^0-9]/g,'')) : 0;
+
+                          if (ap.type === 'multiplier'){
+                            const modified = Math.round(original * (ap.value || 1));
+                            showModified(totals, modified, `+${(ap.value||1)}x`);
+                            // revert after duration
+                            setTimeout(()=>{ clearModified(totals); }, ap.durationMs || 5000);
+                          } else if (ap.type === 'steal'){
+                            const otherOriginal = otherTotals ? Number(otherTotals.dataset.original || otherTotals.dataset.value || otherTotals.textContent.replace(/[^0-9]/g,'')) : 0;
+                            const stealAmount = Math.round((ap.value || 0.1) * otherOriginal);
+                            const newOther = Math.max(0, otherOriginal - stealAmount);
+                            const newTarget = original + stealAmount;
+                            showModified(otherTotals, newOther, `- ${stealAmount}`);
+                            showModified(totals, newTarget, `+ ${stealAmount}`);
+                            setTimeout(()=>{ clearModified(totals); clearModified(otherTotals); }, ap.durationMs || 5000);
                     }
+                        }
+
+                        function showModified(node, value, badgeText){
+                          if (!node) return;
+                          node.dataset.modified = value;
+                          const m = node.querySelector('.modified');
+                          if (m){ m.textContent = `${value} (${badgeText})`; m.classList.remove('hidden'); }
+                          else { const span = document.createElement('span'); span.className = 'modified'; span.textContent = `${value} (${badgeText})`; node.appendChild(span); }
+                        }
+
+                        function clearModified(node){ if (!node) return; const m = node.querySelector('.modified'); if (m) m.classList.add('hidden'); delete node.dataset.modified; }
+
+                        function startSpawnWindow(){
+                          spawnAttempts = 0; if (spawnInterval) clearInterval(spawnInterval);
+                          spawnInterval = setInterval(()=>{ spawnAttempt(); if (spawnAttempts > 8) { clearInterval(spawnInterval); spawnInterval = null } }, 700 + Math.floor(rng()*600));
                   }
-                  const total = (data && typeof data.total_contributions === 'number') ? data.total_contributions : weeks.reduce((s, wk) => s + wk.reduce((a, d) => a + (d.count || 0), 0), 0);
-                  return { weeks, total };
-                }
 
-                function renderPanel(container, username, rawData) {
-                  container.innerHTML = '';
-                  const title = document.createElement('div');
-                  title.className = 'meta';
-                  title.textContent = username || '';
-                  container.appendChild(title);
+                        function stopSpawnWindow(){ if (spawnInterval) { clearInterval(spawnInterval); spawnInterval = null } }
 
-                  if (!rawData) {
-                    const err = document.createElement('div'); err.textContent = 'No data'; err.style.color = '#b00'; container.appendChild(err); return;
-                  }
+                        function clearAll(){ active.clear(); container.innerHTML = ''; }
 
-                  const parsed = parseUpstreamWeeks(rawData);
-                  const total = parsed.total;
-                  const totals = document.createElement('div'); totals.className = 'meta'; totals.textContent = `Total contributions: ${total}`;
-                  container.appendChild(totals);
+                        return { startSpawnWindow, stopSpawnWindow, collect, clearAll };
+                      })();
 
-                  if (parsed.weeks.length) {
-                    const firstWeek = parsed.weeks[0];
-                    const lastWeek = parsed.weeks[parsed.weeks.length - 1];
-                    const start = firstWeek[0] ? firstWeek[0].date : '';
-                    const end = lastWeek[lastWeek.length - 1] ? lastWeek[lastWeek.length - 1].date : '';
-                    const range = document.createElement('div'); range.className = 'meta'; range.textContent = `Range: ${start} — ${end}`;
-                    container.appendChild(range);
-
-                    const grid = document.createElement('div'); grid.className = 'grid small-grid';
-                    grid.tabIndex = 0;
-                    grid.setAttribute('role', 'list');
-                    grid.setAttribute('aria-label', `${username} contribution calendar`);
-                    for (const wk of parsed.weeks) {
-                      const col = document.createElement('div'); col.className = 'week';
-                      for (let di = 0; di < 7; di++) {
-                        const day = wk[di] || { date: '', count: 0, color: '#ebedf0' };
-                        const c = document.createElement('div'); c.className = 'day';
-                        c.title = day.date || '';
-                        c.style.background = day.color || '#ebedf0';
-                        c.setAttribute('role', 'listitem');
-                        c.setAttribute('tabindex', '0');
-                        c.setAttribute('aria-label', `${day.count || 0} contributions on ${day.date || 'unknown date'}`);
-                        col.appendChild(c);
+                      function setLoading(loading) {
+                        btn.disabled = loading;
+                        btn.classList.toggle('is-loading', loading);
+                        p1.disabled = loading;
+                        p2.disabled = loading;
+                        // shimmer panels while loading
+                        left.classList.toggle('shimmer', loading);
+                        right.classList.toggle('shimmer', loading);
+                        if (loading) { PowerUpManager.clearAll(); PowerUpManager.startSpawnWindow(); }
+                        else { /* allow short post-load spawn window then stop */ setTimeout(()=> PowerUpManager.stopSpawnWindow(), 2200); }
                       }
-                      grid.appendChild(col);
-                    }
-                    container.appendChild(grid);
-                  }
-                }
 
-                async function fetchContrib(username) {
-                  try {
-                    const res = await fetch(`/api/contributions/${encodeURIComponent(username)}`);
-                    if (res.status === 404) return { ok:false, status:404, error:'User not found' };
-                    if (res.status === 429) return { ok:false, status:429, error:'Rate limited' };
-                    if (res.status >= 500) return { ok:false, status:res.status, error:'Upstream error' };
-                    if (!res.ok) return { ok:false, status:res.status, error:`Error ${res.status}` };
-                    const j = await res.json();
-                    return { ok:true, data: j, status: res.status };
-                  } catch (e) {
-                    return { ok:false, status:0, error: e?.message || 'Network error' };
-                  }
-                }
+                      function setBadgeText(text) {
+                        const vsEl = document.getElementById('vs');
+                        const badge = vsEl.querySelector('.badge');
+                        if (badge) badge.textContent = text;
+                        Array.from(vsEl.children).forEach(c => { if (!c.classList || !c.classList.contains('badge')) vsEl.removeChild(c); });
+                      }
 
-                function showInlineError(container, username, message) {
-                  container.innerHTML = `<div class="meta">${username}</div><div class="error">${message}</div>`;
-                }
+                      function colorFromPalette(palette, level, count) {
+                        if (Array.isArray(palette) && typeof level === 'number') {
+                          return palette[Math.min(Math.max(0, level), palette.length - 1)];
+                        }
+                        if (!count || count <= 0) return '#ebedf0';
+                        if (count <= 1) return '#9be9a8';
+                        if (count <= 3) return '#40c463';
+                        if (count <= 7) return '#30a14e';
+                        return '#216e39';
+                      }
 
-                async function doBattle() {
-                  const u1 = p1.value.trim(); const u2 = p2.value.trim();
-                  left.innerHTML = ''; right.innerHTML = '';
-                  setBadgeText('VS');
-                  if (!u1 || !u2) {
-                    const resEl = document.getElementById('results');
-                    resEl.innerHTML = '<div class="error">Please enter two valid GitHub usernames.</div>';
-                    return;
-                  }
-                  if (!USERNAME_RE.test(u1) || !USERNAME_RE.test(u2)) {
-                    const resEl = document.getElementById('results');
-                    resEl.innerHTML = '<div class="error">Please enter two valid GitHub usernames.</div>';
-                    return;
-                  }
-                  setLoading(true);
-                  renderPanel(left, u1, null); renderPanel(right, u2, null);
-                  const [r1, r2] = await Promise.all([fetchContrib(u1), fetchContrib(u2)]);
-                  if (r1.ok) renderPanel(left, u1, r1.data); else showInlineError(left, u1, r1.error || 'Error');
-                  if (r2.ok) renderPanel(right, u2, r2.data); else showInlineError(right, u2, r2.error || 'Error');
+                      function parseUpstreamWeeks(data) {
+                        const weeks = [];
+                        const palette = data && data.colors_full;
+                        if (data && Array.isArray(data.weeks)) {
+                          for (const w of data.weeks) {
+                            // timezone-safe parsing: split YYYY-MM-DD
+                            const [y,m,d] = String(w.first_day || '').split('-').map(Number);
+                            const first = new Date(Date.UTC(y, (m||1)-1, d||1));
+                            const col = [];
+                            for (const cd of w.contribution_days) {
+                              const dayDate = new Date(first);
+                              dayDate.setUTCDate(first.getUTCDate() + (cd.weekday || 0));
+                              const dateStr = dayDate.toISOString().slice(0,10);
+                              const color = colorFromPalette(palette, cd.level, cd.count || 0);
+                              col.push({ date: dateStr, count: cd.count || 0, color });
+                            }
+                            weeks.push(col);
+                          }
+                        }
+                        const total = (data && typeof data.total_contributions === 'number') ? data.total_contributions : weeks.reduce((s, wk) => s + wk.reduce((a, d) => a + (d.count || 0), 0), 0);
+                        return { weeks, total };
+                      }
 
-                  const vsEl = document.getElementById('vs'); setBadgeText('VS');
-                  if (r1.ok && r2.ok) {
-                    const t1 = parseUpstreamWeeks(r1.data).total || 0;
-                    const t2 = parseUpstreamWeeks(r2.data).total || 0;
-                    const winner = document.createElement('div'); winner.className = 'meta';
-                    if (t1 > t2) winner.textContent = `${u1} wins!`; else if (t2 > t1) winner.textContent = `${u2} wins!`; else winner.textContent = `It's a tie!`;
-                    vsEl.appendChild(winner);
+                      function renderPanel(container, username, rawData) {
+                        container.innerHTML = '';
+                        const title = document.createElement('div');
+                        title.className = 'meta';
+                        title.textContent = username || '';
+                        container.appendChild(title);
 
-                    // visual and audio feedback for winner
-                    vsEl.classList.add('win-flash');
-                    setTimeout(() => vsEl.classList.remove('win-flash'), 2200);
-                    try { playResultTone(t1, t2); } catch (e) { /* ignore audio errors */ }
-                  }
-                  setLoading(false);
-                }
+                        if (!rawData) {
+                          const err = document.createElement('div'); err.textContent = 'No data'; err.style.color = '#b00'; container.appendChild(err); return;
+                        }
 
-                btn.addEventListener('click', (e) => { e.preventDefault(); doBattle(); });
-                [p1, p2].forEach(inp => inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doBattle(); } }));
+                        const parsed = parseUpstreamWeeks(rawData);
+                        const total = parsed.total;
+                        const totals = document.createElement('div'); totals.className = 'meta total'; totals.dataset.original = total; totals.textContent = `Total contributions: ${total}`;
+                        // placeholder for modified total
+                        const mod = document.createElement('span'); mod.className = 'modified hidden'; mod.textContent = '';
+                        totals.appendChild(mod);
+                        container.appendChild(totals);
 
-                // Small WebAudio feedback for battles
-                function playTone(freq, duration = 120, type = 'sine', gain = 0.06) {
-                  const ctx = new (window.AudioContext || window.webkitAudioContext)();
-                  const o = ctx.createOscillator();
-                  const g = ctx.createGain();
-                  o.type = type; o.frequency.value = freq; g.gain.value = gain;
-                  o.connect(g); g.connect(ctx.destination);
-                  o.start();
-                  setTimeout(() => { o.stop(); ctx.close(); }, duration);
-                }
+                        if (parsed.weeks.length) {
+                          const firstWeek = parsed.weeks[0];
+                          const lastWeek = parsed.weeks[parsed.weeks.length - 1];
+                          const start = firstWeek[0] ? firstWeek[0].date : '';
+                          const end = lastWeek[lastWeek.length - 1] ? lastWeek[lastWeek.length - 1].date : '';
+                          const range = document.createElement('div'); range.className = 'meta'; range.textContent = `Range: ${start} — ${end}`;
+                          container.appendChild(range);
 
-                function playResultTone(t1, t2) {
-                  if (t1 > t2) { playTone(880, 220, 'sawtooth', 0.08); }
-                  else if (t2 > t1) { playTone(440, 220, 'sawtooth', 0.08); }
-                  else { playTone(660, 160, 'triangle', 0.05); }
-                }
-              </script>
+                          const grid = document.createElement('div'); grid.className = 'grid small-grid';
+                          grid.tabIndex = 0;
+                          grid.setAttribute('role', 'list');
+                          grid.setAttribute('aria-label', `${username} contribution calendar`);
+                          for (const wk of parsed.weeks) {
+                            const col = document.createElement('div'); col.className = 'week';
+                            for (let di = 0; di < 7; di++) {
+                              const day = wk[di] || { date: '', count: 0, color: '#ebedf0' };
+                              const c = document.createElement('div'); c.className = 'day';
+                              c.title = day.date || '';
+                              c.style.background = day.color || '#ebedf0';
+                              c.setAttribute('role', 'listitem');
+                              c.setAttribute('tabindex', '0');
+                              c.setAttribute('aria-label', `${day.count || 0} contributions on ${day.date || 'unknown date'}`);
+                              col.appendChild(c);
+                            }
+                            grid.appendChild(col);
+                          }
+                          container.appendChild(grid);
+                        }
+                      }
+
+                      async function fetchContrib(username) {
+                        try {
+                          const res = await fetch(`/api/contributions/${encodeURIComponent(username)}`);
+                          if (res.status === 404) return { ok:false, status:404, error:'User not found' };
+                          if (res.status === 429) return { ok:false, status:429, error:'Rate limited' };
+                          if (res.status >= 500) return { ok:false, status:res.status, error:'Upstream error' };
+                          if (!res.ok) return { ok:false, status:res.status, error:`Error ${res.status}` };
+                          const j = await res.json();
+                          return { ok:true, data: j, status: res.status };
+                        } catch (e) {
+                          return { ok:false, status:0, error: e?.message || 'Network error' };
+                        }
+                      }
+
+                      function showInlineError(container, username, message) {
+                        container.innerHTML = `<div class="meta">${username}</div><div class="error">${message}</div>`;
+                      }
+
+                      async function doBattle() {
+                        const u1 = p1.value.trim(); const u2 = p2.value.trim();
+                        left.innerHTML = ''; right.innerHTML = ''; PowerUpManager.clearAll();
+                        setBadgeText('VS');
+                        if (!u1 || !u2) {
+                          const resEl = document.getElementById('results');
+                          resEl.innerHTML = '<div class="error">Please enter two valid GitHub usernames.</div>';
+                          return;
+                        }
+                        if (!USERNAME_RE.test(u1) || !USERNAME_RE.test(u2)) {
+                          const resEl = document.getElementById('results');
+                          resEl.innerHTML = '<div class="error">Please enter two valid GitHub usernames.</div>';
+                          return;
+                        }
+                        setLoading(true);
+                        renderPanel(left, u1, null); renderPanel(right, u2, null);
+                        const [r1, r2] = await Promise.all([fetchContrib(u1), fetchContrib(u2)]);
+                        if (r1.ok) renderPanel(left, u1, r1.data); else showInlineError(left, u1, r1.error || 'Error');
+                        if (r2.ok) renderPanel(right, u2, r2.data); else showInlineError(right, u2, r2.error || 'Error');
+
+                        const vsEl = document.getElementById('vs'); setBadgeText('VS');
+                        if (r1.ok && r2.ok) {
+                          const t1 = parseUpstreamWeeks(r1.data).total || 0;
+                          const t2 = parseUpstreamWeeks(r2.data).total || 0;
+                          const winner = document.createElement('div'); winner.className = 'meta';
+                          if (t1 > t2) winner.textContent = `${u1} wins!`; else if (t2 > t1) winner.textContent = `${u2} wins!`; else winner.textContent = `It's a tie!`;
+                          vsEl.appendChild(winner);
+
+                          // visual and audio feedback for winner
+                          vsEl.classList.add('win-flash');
+                          setTimeout(() => vsEl.classList.remove('win-flash'), 2200);
+                          try { playResultTone(t1, t2); } catch (e) { /* ignore audio errors */ }
+                        }
+                        setLoading(false);
+                      }
+
+                      btn.addEventListener('click', (e) => { e.preventDefault(); doBattle(); });
+                      [p1, p2].forEach(inp => inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); doBattle(); } }));
+
+                      // Small WebAudio feedback for battles (shared context)
+                      let _audioCtx = null;
+                      function getAudioCtx(){ if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)(); return _audioCtx; }
+                      function playTone(freq, duration = 120, type = 'sine', gain = 0.06) {
+                        try{
+                          const ctx = getAudioCtx();
+                          const o = ctx.createOscillator();
+                          const g = ctx.createGain();
+                          o.type = type; o.frequency.value = freq; g.gain.value = gain;
+                          o.connect(g); g.connect(ctx.destination);
+                          o.start();
+                          setTimeout(()=>{ o.stop(); o.disconnect(); g.disconnect(); }, duration);
+                        }catch(e){}
+                      }
+
+                      function playResultTone(t1, t2) {
+                        if (t1 > t2) { playTone(880, 220, 'sawtooth', 0.08); }
+                        else if (t2 > t1) { playTone(440, 220, 'sawtooth', 0.08); }
+                        else { playTone(660, 160, 'triangle', 0.05); }
+                      }
+                    </script>
     </main>
   </body>
 </html>
