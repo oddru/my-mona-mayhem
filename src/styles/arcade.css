@@ -1,0 +1,175 @@
+/* Retro arcade visuals for Mona Mayhem
+   - CRT scanlines, neon title pulse, animated VS badge
+   - Shimmer on player cards, hover glow on day squares
+   - Float-in inputs and color-shifting loading text
+   - Uses CSS variables for timing to follow UI/UX animation principles
+*/
+
+:root{
+  --bg-dark:#0a0a1a;
+  --neon-green:#5fed83;
+  --neon-purple:#8a2be2;
+  --muted:#9aa0a6;
+  --day-size:12px;
+
+  /* Timing and easing (UI/UX principles)
+     - fast for micro-interactions (~120ms)
+     - medium for most transitions (~200-350ms)
+     - slow for emphasis/effects (~600-900ms)
+  */
+  --t-fast: 120ms;
+  --t-med: 260ms;
+  --t-slow: 800ms;
+  --ease-soft: cubic-bezier(.22,.9,.35,1);
+}
+
+/* Base page styling overrides */
+body{background:var(--bg-dark);color:#e6f7ea;margin:0;padding:0;font-family:'Press Start 2P', monospace}
+.main-container{max-width:980px;margin:28px auto;padding:28px}
+
+/* CRT scanlines & vignette */
+.main-container::before{
+  content:"";
+  position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:linear-gradient(transparent 50%, rgba(0,0,0,0.06) 51%);
+  background-size:100% 2px;mix-blend-mode:overlay;opacity:0.45;
+  animation: scanline-move 6s linear infinite;
+}
+.main-container::after{
+  content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+  background:radial-gradient(ellipse at center, rgba(0,0,0,0) 40%, rgba(0,0,0,0.6) 100%);
+  opacity:0.4;
+}
+
+/* Subtle scanline motion to simulate old CRT refresh */
+@keyframes scanline-move{
+  0% { background-position: 0 0; opacity:0.42 }
+  50% { background-position: 0 1px; opacity:0.48 }
+  100% { background-position: 0 0; opacity:0.42 }
+}
+
+/* Neon title */
+header h1{font-size:22px;color:var(--neon-green);text-align:center;position:relative;z-index:2}
+header h1.neon{
+  text-shadow: 0 0 6px rgba(95,237,131,0.6), 0 0 12px rgba(138,43,226,0.25), 0 0 24px rgba(95,237,131,0.18);
+  animation: neon-pulse var(--t-slow) ease-in-out infinite alternate, neon-flicker 3s steps(20,end) infinite;
+}
+@keyframes neon-pulse{
+  from { filter: drop-shadow(0 0 6px rgba(95,237,131,0.35)); transform: translateY(-1px); }
+  to   { filter: drop-shadow(0 0 22px rgba(95,237,131,0.9)); transform: translateY(0); }
+}
+/* Electrical flicker - subtle, irregular brightness shifts */
+@keyframes neon-flicker {
+  0%   { opacity: 1; filter: drop-shadow(0 0 6px rgba(95,237,131,0.4)); }
+  2%   { opacity: 0.92; filter: drop-shadow(0 0 2px rgba(95,237,131,0.2)); }
+  4%   { opacity: 1; filter: drop-shadow(0 0 10px rgba(95,237,131,0.55)); }
+  7%   { opacity: 0.86; filter: drop-shadow(0 0 3px rgba(95,237,131,0.18)); }
+  10%  { opacity: 1; filter: drop-shadow(0 0 14px rgba(95,237,131,0.7)); }
+  30%  { opacity: 0.95; }
+  60%  { opacity: 1; }
+  100% { opacity: 1; }
+}
+
+/* Subtitle muted */
+.subtitle{color:var(--muted);font-family:Inter, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif}
+
+/* Form float-in */
+.form-area{z-index:2}
+.form-area label{animation: float-in var(--t-med) var(--ease-soft) both}
+.form-area label:nth-child(1){animation-delay:80ms}
+.form-area label:nth-child(2){animation-delay:160ms}
+.form-area button{animation: float-in var(--t-med) calc(var(--t-med) * 0.6) var(--ease-soft) both}
+@keyframes float-in{ from{ opacity:0; transform:translateY(8px) } to{ opacity:1; transform:none } }
+
+/* Button loading color shift */
+button#battle-btn{position:relative;overflow:hidden}
+button#battle-btn .label{display:inline-block}
+button#battle-btn .loading{display:none}
+button#battle-btn.is-loading .label{display:none}
+button#battle-btn.is-loading .loading{display:inline-block;animation: loading-color 1200ms linear infinite}
+@keyframes loading-color{
+  0% { color: var(--neon-green) }
+  50% { color: var(--neon-purple) }
+  100% { color: var(--neon-green) }
+}
+
+/* VS badge animated gradient */
+.vs{position:relative;z-index:2}
+.vs .badge{display:flex;align-items:center;justify-content:center;padding:10px 14px;border-radius:10px;background:linear-gradient(90deg,var(--neon-green),var(--neon-purple));background-size:200% 200%;animation: vs-shift 3.5s linear infinite, vs-pulse 1.6s ease-in-out infinite}
+@keyframes vs-shift{ from{background-position:0% 50%} to{background-position:100% 50%} }
+@keyframes vs-pulse{ 0% { transform: scale(1); box-shadow: 0 4px 12px rgba(138,43,226,0.06) } 50% { transform: scale(1.06); box-shadow: 0 8px 22px rgba(138,43,226,0.18) } 100% { transform: scale(1); box-shadow: 0 4px 12px rgba(138,43,226,0.06) } }
+.vs .winner{background:rgba(255,255,255,0.08);padding:6px 8px;border-radius:6px;margin-top:6px}
+
+/* Player panels: sheen overlay and subtle glow */
+.player-panel{position:relative;overflow:hidden}
+.player-panel::after{
+  content:'';position:absolute;inset:0;pointer-events:none;
+  background:linear-gradient(120deg, rgba(255,255,255,0.03) 0%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 100%);
+  transform:translateX(-100%);filter:blur(6px);opacity:0.8;transition:transform 1s ease-in-out;will-change:transform;
+}
+.player-panel.shimmer::after{ transform:translateX(100%) }
+.player-panel{box-shadow: 0 6px 18px rgba(0,0,0,0.6), 0 0 8px rgba(95,237,131,0.05)}
+.player-panel:focus-within{outline:2px solid rgba(138,43,226,0.15)}
+
+/* Contribution day hover glow */
+.day{transition: transform var(--t-fast) var(--ease-soft), box-shadow var(--t-fast) var(--ease-soft)}
+.day:hover{ transform: translateY(-3px); box-shadow: 0 6px 18px rgba(0,0,0,0.6), 0 0 8px rgba(150,255,200,0.14) }
+
+/* Reduced motion for accessibility */
+@media (prefers-reduced-motion: reduce){
+  * { animation: none !important; transition: none !important }
+  .main-container::before, .main-container::after { display:none }
+}
+
+/* Inputs and panels color adjustments for dark theme and accessibility */
+input[type="text"], textarea {
+  background: rgba(255,255,255,0.03);
+  color: #e6f7ea;
+  border: 1px solid rgba(255,255,255,0.06);
+  padding: 8px 10px;
+  border-radius: 6px;
+}
+input[type="text"]::placeholder, textarea::placeholder {
+  color: rgba(230,247,234,0.45);
+}
+input[type="text"]:focus, textarea:focus {
+  outline: none;
+  box-shadow: 0 0 12px rgba(95,237,131,0.14), 0 0 24px rgba(138,43,226,0.06);
+  border-color: rgba(95,237,131,0.25);
+}
+
+/* Player panels should be dark to match background */
+.player-panel{
+  background: linear-gradient(180deg, rgba(255,255,255,0.012), rgba(0,0,0,0.06));
+  border: 1px solid rgba(255,255,255,0.04);
+  color: #e6f7ea;
+}
+
+.meta { color: #e6f7ea }
+
+/* Day squares - ensure visible on dark background even if level is light */
+.day { border: 1px solid rgba(0,0,0,0.18) }
+
+/* Subtle pixel noise overlay for authenticity */
+.main-container::before {
+  /* existing scanline background; add layered noise */
+}
+.main-container::after {
+  /* existing vignette */
+}
+
+/* tiny noise layer using SVG data URI to add film grain */
+.main-container::before, .main-container::after { pointer-events: none }
+
+.main-container .noise-layer{position:fixed;inset:0;z-index:1;pointer-events:none;opacity:0.03;background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='64' height='64'><filter id='f'><feTurbulence baseFrequency='0.8' numOctaves='1' stitchTiles='stitch'/></filter><rect width='100%' height='100%' filter='url(%23f)' opacity='0.6' fill='white'/></svg>");background-repeat:repeat;background-size:64px 64px;mix-blend-mode:overlay}
+
+/* Neon outline on hover for panels */
+.player-panel:hover{ box-shadow: 0 10px 30px rgba(0,0,0,0.6), 0 0 18px rgba(95,237,131,0.08); border-color: rgba(95,237,131,0.16); transform: translateY(-2px); transition: transform var(--t-fast) var(--ease-soft), box-shadow var(--t-med) var(--ease-soft) }
+
+/* Winner flash on VS badge */
+.vs.win-flash .badge{ animation: vs-shift 2s linear infinite, vs-pulse 0.9s ease-in-out 3; }
+
+/* Small footer arcade credits */
+.footer-arcade{ text-align:center; color: rgba(230,247,234,0.35); font-size:11px; margin-top:18px }
+
+.hidden{display:none}

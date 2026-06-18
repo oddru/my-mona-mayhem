@@ -1,0 +1,173 @@
+---
+---
+
+<section class="battle">
+  <header>
+    <h1>Mona Mayhem</h1>
+    <p class="subtitle">GitHub Contribution Battle Arena — enter two usernames and battle!</p>
+  </header>
+
+  <form id="battle-form" class="battle-form" on:submit preventDefault>
+    <div class="field">
+      <label for="player1">Player 1</label>
+      <input id="player1" name="player1" type="text" maxlength="39" autocomplete="off" />
+    </div>
+    <div class="field">
+      <label for="player2">Player 2</label>
+      <input id="player2" name="player2" type="text" maxlength="39" autocomplete="off" />
+    </div>
+    <div class="actions">
+      <button id="battle-btn" type="submit">Battle!</button>
+    </div>
+  </form>
+
+  <div id="results" class="results" aria-live="polite"></div>
+
+  <style>
+    .battle { font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Press Start 2P', monospace; max-width:720px; margin:24px auto; padding:12px; }
+    header { text-align:center; margin-bottom:12px }
+    .subtitle { margin:4px 0 12px 0; color:#666 }
+    .battle-form { display:flex; gap:12px; align-items:end; flex-wrap:wrap }
+    .field { display:flex; flex-direction:column; min-width:220px }
+    label { font-size:12px; color:#222 }
+    input { padding:8px 10px; font-size:14px }
+    .actions { margin-left:auto }
+    button { padding:10px 16px; font-weight:700; cursor:pointer }
+    .results { margin-top:18px; border-top:1px dashed #ddd; padding-top:12px }
+    .player { padding:8px 0 }
+    .winner { color: #0a0; font-weight:800 }
+    .error { color:#b00 }
+    .small-grid { display:flex; gap:4px; margin-top:8px; }
+    .cell { width:12px; height:12px; background:#eee }
+  </style>
+
+  <script type="module" client:load>
+    const USERNAME_RE = /^[a-zA-Z0-9-]{1,39}$/;
+    const form = document.getElementById('battle-form');
+    const btn = document.getElementById('battle-btn');
+    const p1 = document.getElementById('player1');
+    const p2 = document.getElementById('player2');
+    const results = document.getElementById('results');
+
+    function setLoading(on) {
+      btn.disabled = on;
+      btn.textContent = on ? 'Battling…' : 'Battle!';
+    }
+
+    function clearResults() { results.innerHTML = ''; }
+
+    function renderPlayer(username, status, total, details, headerExtras = '') {
+      const el = document.createElement('div');
+      el.className = 'player';
+      const h = document.createElement('div');
+      h.innerHTML = `<strong>${username}</strong> ${headerExtras}`;
+      el.appendChild(h);
+      if (status === 'ok') {
+        const t = document.createElement('div');
+        t.textContent = `Total contributions: ${total}`;
+        el.appendChild(t);
+        if (details && details.length) {
+          const grid = document.createElement('div');
+          grid.className = 'small-grid';
+          for (const v of details.slice(-7)) {
+            const c = document.createElement('div');
+            c.className = 'cell';
+            // shade by value
+            const vN = Number(v) || 0;
+            const alpha = Math.min(1, vN / 20 + 0.05);
+            c.style.background = `rgba(20,100,200,${alpha})`;
+            grid.appendChild(c);
+          }
+          el.appendChild(grid);
+        }
+      } else {
+        const err = document.createElement('div');
+        err.className = 'error';
+        err.textContent = status;
+        el.appendChild(err);
+      }
+      return el;
+    }
+
+    function computeTotal(body) {
+      if (!body || typeof body !== 'object') return { total: 0, details: [] };
+      if (typeof body.total === 'number') return { total: body.total, details: [] };
+      // weeks -> days -> count
+      if (Array.isArray(body.weeks)) {
+        const details = [];
+        for (const w of body.weeks) {
+          if (Array.isArray(w.days)) {
+            for (const d of w.days) {
+              const c = Number(d.count || d.contributions || d.value || 0) || 0;
+              details.push(c);
+            }
+          }
+        }
+        const total = details.reduce((a,b)=>a+b,0);
+        return { total, details };
+      }
+      // days array
+      if (Array.isArray(body.days)) {
+        const details = body.days.map(d => Number(d.count || d.value || 0) || 0);
+        return { total: details.reduce((a,b)=>a+b,0), details };
+      }
+      // fallback: scan for numbers named count in nested objects
+      let total = 0; const details = [];
+      function walk(o) {
+        if (!o || typeof o !== 'object') return;
+        for (const k of Object.keys(o)) {
+          const v = o[k];
+          if (k.toLowerCase().includes('count') && typeof v === 'number') { total += v; details.push(v); }
+          else if (Array.isArray(v)) { v.forEach(walk); }
+          else if (typeof v === 'object') walk(v);
+        }
+      }
+      walk(body);
+      return { total, details };
+    }
+
+    async function fetchPlayer(username) {
+      try {
+        const res = await fetch(`/api/contributions/${encodeURIComponent(username)}`);
+        if (res.status === 404) return { status: 'User not found', ok: false };
+        if (res.status === 429) return { status: 'Rate limited (server)', ok: false };
+        if (res.status >= 500) return { status: 'Upstream error', ok: false };
+        if (!res.ok) return { status: `Error ${res.status}`, ok: false };
+        const j = await res.json();
+        const { total, details } = computeTotal(j);
+        return { status: 'ok', ok: true, total, details, raw: j };
+      } catch (e) {
+        return { status: 'Network error', ok: false };
+      }
+    }
+
+    form.addEventListener('submit', async (ev) => {
+      clearResults();
+      const u1 = p1.value.trim();
+      const u2 = p2.value.trim();
+      if (!USERNAME_RE.test(u1) || !USERNAME_RE.test(u2)) {
+        results.textContent = 'Please enter two valid GitHub usernames.';
+        return;
+      }
+      setLoading(true);
+      const [r1, r2] = await Promise.all([fetchPlayer(u1), fetchPlayer(u2)]);
+      clearResults();
+      const left = renderPlayer(u1, r1.ok ? 'ok' : r1.status, r1.total || 0, r1.details || []);
+      const right = renderPlayer(u2, r2.ok ? 'ok' : r2.status, r2.total || 0, r2.details || []);
+      results.appendChild(left);
+      results.appendChild(right);
+
+      if (r1.ok && r2.ok) {
+        let message = '';
+        if (r1.total > r2.total) message = `${u1} wins!`;
+        else if (r2.total > r1.total) message = `${u2} wins!`;
+        else message = "It's a tie!";
+        const m = document.createElement('div');
+        m.className = 'winner';
+        m.textContent = message;
+        results.appendChild(m);
+      }
+      setLoading(false);
+    });
+  </script>
+</section>
